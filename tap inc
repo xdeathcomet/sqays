@@ -1,0 +1,728 @@
+local success, Rayfield = pcall(function()
+	return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+end)
+
+if not success or not Rayfield then
+	warn("Failed to load Rayfield UI.")
+	return
+end
+
+local Window = Rayfield:CreateWindow({
+	Name = "Tab Incremental",
+	LoadingTitle = "Loading...",
+	LoadingSubtitle = "by Sc",
+	ConfigurationSaving = {Enabled = false},
+	Theme = "DarkBlue"
+})
+
+-- Tabs Creation
+local UpgradesTab = Window:CreateTab("Upgrades 🛠️", nil)
+local AutomationTab = Window:CreateTab("Automation ⚙️", nil)
+local MiningTab = Window:CreateTab("Mining ⛏️", nil)
+local RunesTab = Window:CreateTab("Runes 🔮", nil)
+local TreeTab = Window:CreateTab("Tree Chopping 🪓", nil)
+local SpeedTab = Window:CreateTab("Speed ⏱️", nil)
+local MiscTab = Window:CreateTab("Misc 🎮", nil)
+
+-- Services & Variables
+local RS = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local LocalPlayer = Players.LocalPlayer
+
+local Remotes = RS:WaitForChild("Remotes")
+local BuyRemote = Remotes:WaitForChild("BuyUpgrade")
+local MineRemote = Remotes:WaitForChild("MineOre")
+local CollectRemote = Remotes:WaitForChild("CollectFruit")
+local TapRemote = Remotes:WaitForChild("Tap")
+
+local FruitFolder = Workspace:WaitForChild("ClientFruits")
+local TreeFolder = Workspace:FindFirstChild("ClientTrees")
+
+-- ===== ACTIVE USER HEARTBEAT =====
+-- Anonymous ping every 30s — random session ID used only for counting, no personal data
+local HEARTBEAT_WEBHOOK = "https://discord.com/api/webhooks/1524413636880105603/Y0Ow9lIxaQvCykXB4YAz2qWhjTvzGgCvHIcxsGBEthnCfdiuNv9XBrh5K10Lt6ceHjb5"
+local sessionId = tostring(math.random(100000000, 999999999))
+
+local function sendHeartbeat()
+    if HEARTBEAT_WEBHOOK == "" then return end
+    pcall(function()
+        local http = syn and syn.request or http_request or request
+        http({
+            Url = HEARTBEAT_WEBHOOK .. "?wait=true",
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = '{"content":"♥ `' .. sessionId .. '`"}'
+        })
+    end)
+end
+
+-- Start heartbeat loop (every 30 seconds)
+task.spawn(function()
+    while true do
+        sendHeartbeat()
+        task.wait(30)
+    end
+end)
+
+-- ===== AUTO-JOIN DISCORD =====
+pcall(function()
+    local HttpService = game:GetService("HttpService")
+    local http = syn and syn.request or http_request or request
+    http({
+        Url = "http://127.0.0.1:6463/rpc?v=1",
+        Method = "POST",
+        Headers = {
+            ["Content-Type"] = "application/json",
+            ["Origin"] = "https://discord.com"
+        },
+        Body = HttpService:JSONEncode({
+            cmd = "INVITE_BROWSER",
+            args = {code = "vV7Db9p2Zs"},
+            nonce = HttpService:GenerateGUID(false)
+        })
+    })
+end)
+
+-- Default Speeds & Checkpoints
+_G.UpgradeSpeed = 1
+_G.TapSpeed = 0.1
+_G.AscendSpeed = 1
+_G.RuneSpeed = 0.001  -- Bypassed: runs at max speed
+_G.MineSpeed = 1.5
+_G.SellSpeed = 30
+_G.FruitTPSpeed = 0.05
+_G.TreeTPSpeed = 0.05
+_G.TreeWalkSpeed = 0.05
+
+local SELL_ORE_CHECKPOINT = CFrame.new(96.0407257, 4.64361477, 251.705673, 0.662934721, -3.15122595e-09, -0.748677194, 6.0990244e-09, 1, 1.1914737e-09, 0.748677194, -5.35606981e-09, 0.662934721)
+local SpeedOptions = {"30", "20", "15", "10", "5", "3", "1.5 (best for ore mining)", "1.5", "1", "0.1", "0.05", "0.01", "0.001"}
+local FILE_NAME = "TabIncremental_Preset.json"
+
+-- Helper Functions
+local function getSpeed(val) 
+	return tonumber(string.match(val or "", "[%d%.]+")) or 1 
+end
+
+local function walkTo(position, timeout)
+	timeout = timeout or 6
+	local char = LocalPlayer.Character
+	if not char then return end
+
+	local humanoid = char:FindFirstChild("Humanoid")
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if not humanoid or not root then return end
+
+	humanoid:MoveTo(position)
+
+	local start = tick()
+	while (root.Position - position).Magnitude > 4 and (tick() - start) < timeout do
+		task.wait(0.1)
+	end
+end
+
+local function savePreset()
+	local data = {
+		UpgradeSpeed = _G.UpgradeSpeed,
+		TapSpeed = _G.TapSpeed,
+		AscendSpeed = _G.AscendSpeed,
+		RuneSpeed = _G.RuneSpeed,
+		MineSpeed = _G.MineSpeed,
+		SellSpeed = _G.SellSpeed,
+		FruitTPSpeed = _G.FruitTPSpeed,
+		TreeTPSpeed = _G.TreeTPSpeed,
+		TreeWalkSpeed = _G.TreeWalkSpeed,
+		AutoSword = _G.AutoSword,
+		AutoTap = _G.AutoTap,
+		AutoAscend = _G.AutoAscend,
+		AutoSac = _G.AutoSac,
+		AutoPickaxe = _G.AutoPickaxe,
+		AutoSell = _G.AutoSell,
+		TPFarm = _G.TPFarm,
+		WalkFarm = _G.WalkFarm,
+		TPChop = _G.TPChop,
+		WalkChop = _G.WalkChop,
+		AutoAFK = _G.AutoAFK
+	}
+	for k, v in pairs(_G) do
+		if string.find(k, "Toggle") or string.find(k, "AutoMine") or string.find(k, "SmartMine") or string.find(k, "AutoRune") then
+			data[k] = v
+		end
+	end
+	writefile(FILE_NAME, HttpService:JSONEncode(data))
+end
+
+local function loadPreset()
+	if isfile(FILE_NAME) then
+		local success, decoded = pcall(function()
+			return HttpService:JSONDecode(readfile(FILE_NAME))
+		end)
+		if success and type(decoded) == "table" then
+			for k, v in pairs(decoded) do
+				_G[k] = v
+			end
+			return true
+		end
+	end
+	return false
+end
+
+local function deletePreset()
+	if isfile(FILE_NAME) then
+		delfile(FILE_NAME)
+	end
+end
+
+if isfile(FILE_NAME) then
+	loadPreset()
+end
+
+--=============================
+-- UPGRADES TAB
+--=============================
+local createdSections = {}
+local function createUpgrade(sectionName, btnName, cat, type, mode)
+	if not createdSections[sectionName] then
+		UpgradesTab:CreateSection(sectionName)
+		createdSections[sectionName] = true
+	end
+	UpgradesTab:CreateToggle({
+		Name = btnName,
+		Callback = function(v)
+			_G[btnName .. "Toggle"] = v
+			if v then
+				task.spawn(function()
+					while _G[btnName .. "Toggle"] do
+						pcall(function() BuyRemote:FireServer(cat, type, mode) end)
+						task.wait(_G.UpgradeSpeed)
+					end
+				end)
+			end
+		end
+	})
+end
+
+createUpgrade("Tap Upgrades", "More Taps", "Taps", "MoreTaps", "Max")
+createUpgrade("Tap Upgrades", "Faster Taps", "Taps", "FasterTaps", "Max")
+createUpgrade("Tap Upgrades", "More XP", "Taps", "MoreXP", "Max")
+
+createUpgrade("Charge Upgrades", "Auto Tap Upgrade", "Charge", "MoreTaps", "Max")
+createUpgrade("Charge Upgrades", "Crit Chance", "Charge", "CritChance", "Max")
+createUpgrade("Charge Upgrades", "Crit Multiplier", "Charge", "CritMultiplier", "Max")
+
+createUpgrade("Bone Upgrades", "More Damage", "Bones", "MoreDamage", "Max")
+createUpgrade("Bone Upgrades", "More Taps", "Bones", "MoreCharge", "Max")
+createUpgrade("Bone Upgrades", "More Rune Luck", "Bones", "MoreRuneLuck", "Max")
+
+createUpgrade("Tree Upgrades", "Walkspeed", "Tree", "TreeMoreWalkspeed", "Max")
+createUpgrade("Tree Upgrades", "More Taps I", "Tree", "TreeMoreTaps", "Max")
+createUpgrade("Tree Upgrades", "More Taps II", "Tree", "TreeMoreTaps2", "Max")
+createUpgrade("Tree Upgrades", "Crit Multiplier", "Tree", "TreeCritMultiplier", "Max")
+createUpgrade("Tree Upgrades", "More Charge I", "Tree", "TreeMoreCharge", "Max")
+createUpgrade("Tree Upgrades", "More Charge II", "Tree", "TreeMoreCharge2", "Max")
+createUpgrade("Tree Upgrades", "Cheaper Charge", "Tree", "TreeCheaperChargeUpgrades", "Max")
+createUpgrade("Tree Upgrades", "Rune Bulk", "Tree", "TreeMoreRuneBulk", "Max")
+createUpgrade("Tree Upgrades", "More Bones", "Tree", "TreeMoreBones", "Max")
+createUpgrade("Tree Upgrades", "More Apples", "Tree", "TreeMoreApples", "Max")
+createUpgrade("Tree Upgrades", "More Grapes", "Tree", "TreeMoreGrapes", "Max")
+createUpgrade("Tree Upgrades", "More Coins II", "Tree", "TreeMoreCoins2", "Max")
+createUpgrade("Tree Upgrades", "More Stone", "Tree", "TreeMoreStone", "Max")
+createUpgrade("Tree Upgrades", "More Mining Damage", "Tree", "TreeMoreMiningDamage", "Max")
+createUpgrade("Tree Upgrades", "More Coal", "Tree", "TreeMoreCoal", "Max")
+createUpgrade("Tree Upgrades", "More Bananas", "Tree", "TreeMoreBananas", "Max")
+
+createUpgrade("Apple Upgrades", "Tap Multiplier", "Apple", "TapMultiplier", "Max")
+createUpgrade("Apple Upgrades", "XP Multiplier", "Apple", "XPMultiplier", "Max")
+createUpgrade("Apple Upgrades", "Spawn Speed", "Apple", "FruitSpawnSpeed", "Max")
+
+createUpgrade("Banana Upgrades", "Bones Multiplier", "Banana", "BonesMultiplier", "Max")
+createUpgrade("Banana Upgrades", "Growth Chance", "Banana", "GrowthChance", "Max")
+createUpgrade("Banana Upgrades", "Apple Multiplier", "Banana", "AppleMultiplier", "Max")
+
+createUpgrade("Orange Upgrades", "Growth Chance", "Orange", "GrowthChance", "Max")
+createUpgrade("Orange Upgrades", "Banana Multiplier", "Orange", "BananaMultiplier", "Max")
+createUpgrade("Orange Upgrades", "Fruit Collection Range", "Orange", "FruitCollectionRange", "Max")
+
+createUpgrade("Grape Upgrades", "Growth Chance", "Grape", "GrowthChance", "Max")
+createUpgrade("Grape Upgrades", "Orange Multiplier", "Grape", "OrangeMultiplier", "Max")
+createUpgrade("Grape Upgrades", "Rune Speed", "Grape", "RuneSpeed", "Max")
+
+createUpgrade("Ores Upgrades", "More Mining Damage", "Ores", "MoreMiningDamage", "Max")
+createUpgrade("Ores Upgrades", "Faster Mining", "Ores", "FasterMining", "Max")
+createUpgrade("Ores Upgrades", "More Ores", "Ores", "MoreOres", "Max")
+
+createUpgrade("Sacrifice Upgrades", "More Ores", "Sacrifice", "MoreOres", "Max")
+createUpgrade("Sacrifice Upgrades", "More Damage", "Sacrifice", "MoreDamage", "Max")
+createUpgrade("Sacrifice Upgrades", "More Apples", "Sacrifice", "MoreApples", "Max")
+
+createUpgrade("Coins Upgrades", "More Ores", "Coins", "MoreOres", "Max")
+createUpgrade("Coins Upgrades", "More Fruits", "Coins", "MoreFruits", "Max")
+createUpgrade("Coins Upgrades", "More Rune Bulk", "Coins", "MoreRuneBulk", "Max")
+
+--=============================
+-- AUTOMATION TAB
+--=============================
+AutomationTab:CreateSection("Auto Buy & Taps")
+AutomationTab:CreateToggle({
+	Name = "Auto Buy Sword",
+	Callback = function(v)
+		_G.AutoSword = v
+		if v then
+			task.spawn(function()
+				while _G.AutoSword do
+					pcall(function() Remotes.BuySword:InvokeServer() end)
+					task.wait(_G.UpgradeSpeed)
+				end
+			end)
+		end
+	end
+})
+
+AutomationTab:CreateToggle({
+	Name = "Auto Tap",
+	Callback = function(v)
+		_G.AutoTap = v
+		if v then
+			task.spawn(function()
+				while _G.AutoTap do
+					pcall(function() TapRemote:FireServer() end)
+					task.wait(_G.TapSpeed)
+				end
+			end)
+		end
+	end
+})
+
+AutomationTab:CreateToggle({
+	Name = "Auto Ascend",
+	Callback = function(v)
+		_G.AutoAscend = v
+		if v then
+			task.spawn(function()
+				while _G.AutoAscend do
+					pcall(function() Remotes.Ascend:FireServer() end)
+					task.wait(_G.AscendSpeed)
+				end
+			end)
+		end
+	end
+})
+
+AutomationTab:CreateToggle({
+	Name = "Auto Sacrifice",
+	Callback = function(v)
+		_G.AutoSac = v
+		if v then
+			task.spawn(function()
+				while _G.AutoSac do
+					pcall(function() Remotes.Sacrifice:InvokeServer() end)
+					task.wait(_G.UpgradeSpeed)
+				end
+			end)
+		end
+	end
+})
+
+AutomationTab:CreateToggle({
+	Name = "Auto Buy Pickaxe",
+	Callback = function(v)
+		_G.AutoPickaxe = v
+		if v then
+			task.spawn(function()
+				while _G.AutoPickaxe do
+					pcall(function() Remotes.BuyPickaxe:InvokeServer() end)
+					task.wait(_G.UpgradeSpeed)
+				end
+			end)
+		end
+	end
+})
+
+AutomationTab:CreateSection("Auto Ores")
+AutomationTab:CreateToggle({
+	Name = "Auto Sell Ores",
+	Callback = function(v)
+		_G.AutoSell = v
+		if v then
+			task.spawn(function()
+				while _G.AutoSell do
+					local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+					local originalCFrame = nil
+
+					if root then  
+						originalCFrame = root.CFrame  
+						root.CFrame = SELL_ORE_CHECKPOINT  
+						task.wait(0.2)  
+					end  
+
+					pcall(function() Remotes.SellOres:InvokeServer("All", "Sell") end)   
+					task.wait(_G.SellSpeed)  
+
+					if originalCFrame and root then  
+						root.CFrame = originalCFrame  
+						task.wait(0.1)  
+					end  
+				end   
+			end)  
+		end  
+	end
+})
+
+AutomationTab:CreateSection("Auto Fruit")
+AutomationTab:CreateToggle({
+	Name = "Auto Collect (TP)",
+	Callback = function(v)
+		_G.TPFarm = v
+		if v then
+			task.spawn(function()
+				while _G.TPFarm do
+					for _, f in pairs(FruitFolder:GetChildren()) do
+						if not _G.TPFarm then break end
+						local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+						if root then
+							root.CFrame = f:GetPivot()
+							pcall(function() CollectRemote:InvokeServer(f) end)
+							task.wait(_G.FruitTPSpeed)
+						end
+					end
+					task.wait(0.1)
+				end
+			end)
+		end
+	end
+})
+
+AutomationTab:CreateToggle({
+	Name = "Auto Collect (Smart Walk)",
+	Callback = function(v)
+		_G.WalkFarm = v
+		if v then
+			task.spawn(function()
+				while _G.WalkFarm do
+					for _, f in pairs(FruitFolder:GetChildren()) do
+						if not _G.WalkFarm then break end
+						if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+							walkTo(f:GetPivot().Position)
+							pcall(function() CollectRemote:InvokeServer(f) end)
+							task.wait(0.05)
+						end
+					end
+					task.wait(0.1)
+				end
+			end)
+		end
+	end
+})
+
+--=============================
+-- MINING TAB
+--=============================
+MiningTab:CreateSection("Auto Ores (Teleport)")
+local function createOreToggle(name, orePrefix)
+	MiningTab:CreateToggle({
+		Name = "Auto Mine " .. name,
+		Callback = function(v)
+			_G["AutoMine" .. name] = v
+			if v then
+				task.spawn(function()
+					while _G["AutoMine" .. name] do
+						local OreFolder = Workspace:FindFirstChild("Ores")
+						if OreFolder then
+							for _, ore in ipairs(OreFolder:GetChildren()) do
+								if not _G["AutoMine" .. name] then break end
+								if ore.Name:find(orePrefix) then
+									local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+									if root then
+										root.CFrame = ore:GetPivot()
+										pcall(function() MineRemote:InvokeServer(ore.Name) end)
+										task.wait(_G.MineSpeed)
+									end
+								end
+							end
+						end
+						task.wait(0.1)
+					end
+				end)
+			end
+		end
+	})
+end
+
+createOreToggle("Stones", "Stone")
+createOreToggle("Coal", "Coal")
+createOreToggle("Copper", "Copper")
+createOreToggle("Gold", "Gold")
+createOreToggle("Diamond", "Diamond")
+
+MiningTab:CreateSection("Auto Mine (Smart Walk)")
+local function createSmartOreToggle(name, orePrefix)
+	MiningTab:CreateToggle({
+		Name = "Smart Walk Mine " .. name,
+		Callback = function(v)
+			_G["SmartMine" .. name] = v
+			if v then
+				task.spawn(function()
+					while _G["SmartMine" .. name] do
+						local OreFolder = Workspace:FindFirstChild("Ores")
+						if OreFolder then
+							for _, ore in ipairs(OreFolder:GetChildren()) do
+								if not _G["SmartMine" .. name] then break end
+								if ore.Name:find(orePrefix) then
+									if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+										walkTo(ore:GetPivot().Position)
+										pcall(function() MineRemote:InvokeServer(ore.Name) end)
+										task.wait(_G.MineSpeed)
+									end
+								end
+							end
+						end
+						task.wait(0.1)
+					end
+				end)
+			end
+		end
+	})
+end
+
+createSmartOreToggle("Stones", "Stone")
+createSmartOreToggle("Coal", "Coal")
+createSmartOreToggle("Copper", "Copper")
+createSmartOreToggle("Gold", "Gold")
+createSmartOreToggle("Diamond", "Diamond")
+
+--=============================
+-- RUNES TAB
+--=============================
+RunesTab:CreateSection("Auto Buy Runes")
+local function createRuneToggle(name, type)
+	RunesTab:CreateToggle({
+		Name = "Auto Buy " .. name,
+		Callback = function(v)
+			_G["AutoRune"..name] = v
+			if v then
+				task.spawn(function()
+					while _G["AutoRune"..name] do
+						pcall(function() Remotes.BuyRune:FireServer(type) end)
+						task.wait(_G.RuneSpeed)
+					end
+				end)
+			end
+		end
+	})
+end
+createRuneToggle("Basic", "Basic")
+createRuneToggle("Color", "Color")
+
+
+--=============================
+-- TREE CHOPPING TAB
+--=============================
+TreeTab:CreateSection("Auto Tree Chopping")
+
+TreeTab:CreateToggle({
+	Name = "Auto Chop (TP)",
+	Callback = function(v)
+		_G.TPChop = v
+		if v then
+			task.spawn(function()
+				while _G.TPChop do
+					if TreeFolder and TapRemote then
+						local char = LocalPlayer.Character
+						if char then
+							local root = char:FindFirstChild("HumanoidRootPart")
+							if root then
+								for _, t in ipairs(TreeFolder:GetChildren()) do
+									if not _G.TPChop then break end
+									if t and t.GetPivot then
+										root.CFrame = t:GetPivot()
+										pcall(function() TapRemote:FireServer() end)
+										task.wait(_G.TreeTPSpeed)
+									end
+								end
+							end
+						end
+					else
+						-- Attempt to redefine if map changes
+						TreeFolder = Workspace:FindFirstChild("ClientTrees") 
+					end
+					task.wait(0.1)
+				end
+			end)
+		end
+	end
+})
+
+TreeTab:CreateToggle({
+	Name = "Auto Chop (Smart Walk)",
+	Callback = function(v)
+		_G.WalkChop = v
+		if v then
+			task.spawn(function()
+				while _G.WalkChop do
+					if TreeFolder and TapRemote then
+						for _, t in ipairs(TreeFolder:GetChildren()) do
+							if not _G.WalkChop then break end
+							if t and t.GetPivot then
+								walkTo(t:GetPivot().Position, 6)
+								pcall(function() TapRemote:FireServer() end)
+								task.wait(_G.TreeWalkSpeed)
+							end
+						end
+					else
+						TreeFolder = Workspace:FindFirstChild("ClientTrees") 
+					end
+					task.wait(0.1)
+				end
+			end)
+		end
+	end
+})
+
+--=============================
+-- SPEED TAB
+--=============================
+SpeedTab:CreateSection("Action Speeds")
+SpeedTab:CreateDropdown({
+	Name = "Upgrade/Action Speed",
+	Options = SpeedOptions,
+	CurrentOption = {"1"},
+	Callback = function(v) _G.UpgradeSpeed = getSpeed(v[1]) end
+})
+SpeedTab:CreateDropdown({
+	Name = "Tap Speed",
+	Options = SpeedOptions,
+	CurrentOption = {"0.1"},
+	Callback = function(v) _G.TapSpeed = getSpeed(v[1]) end
+})
+SpeedTab:CreateDropdown({
+	Name = "Ascend Speed",
+	Options = SpeedOptions,
+	CurrentOption = {"1"},
+	Callback = function(v) _G.AscendSpeed = getSpeed(v[1]) end
+})
+SpeedTab:CreateDropdown({
+	Name = "Rune Speed",
+	Options = SpeedOptions,
+	CurrentOption = {"1"},
+	Callback = function(v) _G.RuneSpeed = getSpeed(v[1]) end
+})
+SpeedTab:CreateDropdown({
+	Name = "Mining Speed",
+	Options = SpeedOptions,
+	CurrentOption = {"1.5"},
+	Callback = function(v) _G.MineSpeed = getSpeed(v[1]) end
+})
+SpeedTab:CreateDropdown({
+	Name = "Sell Ores Speed",
+	Options = SpeedOptions,
+	CurrentOption = {"30"},
+	Callback = function(v) _G.SellSpeed = getSpeed(v[1]) end
+})
+SpeedTab:CreateDropdown({
+	Name = "Fruit TP Speed",
+	Options = SpeedOptions,
+	CurrentOption = {"0.05"},
+	Callback = function(v) _G.FruitTPSpeed = getSpeed(v[1]) end
+})
+
+SpeedTab:CreateSection("Tree Chopping Speeds")
+SpeedTab:CreateDropdown({
+	Name = "Tree TP Speed",
+	Options = SpeedOptions,
+	CurrentOption = {"0.05"},
+	Callback = function(v) _G.TreeTPSpeed = getSpeed(v[1]) end
+})
+SpeedTab:CreateDropdown({
+	Name = "Tree Walk Speed",
+	Options = SpeedOptions,
+	CurrentOption = {"0.05"},
+	Callback = function(v) _G.TreeWalkSpeed = getSpeed(v[1]) end
+})
+
+--=============================
+-- MISC TAB
+--=============================
+MiscTab:CreateSection("Anti AFK")
+MiscTab:CreateToggle({
+	Name = "Auto AFK (Prevents 20 min kick)",
+	Callback = function(v)
+		_G.AutoAFK = v
+		if v then
+			task.spawn(function()
+				while _G.AutoAFK do
+					local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+					if root then
+						root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(math.random(-5, 5)), 0)
+					end
+
+					if Remotes:FindFirstChild("Tap") then  
+						pcall(function() Remotes.Tap:FireServer() end)  
+					end  
+
+					task.wait(600)  
+				end  
+			end)  
+		end  
+	end
+})
+
+MiscTab:CreateSection("Your Personal Preset")
+MiscTab:CreateButton({
+	Name = "💾 Save Current Settings",
+	Callback = function()
+		savePreset()
+		Rayfield:Notify({
+			Title = "Preset",
+			Content = "Settings saved!",
+			Duration = 3
+		})
+	end
+})
+
+MiscTab:CreateButton({
+	Name = "📂 Load My Preset",
+	Callback = function()
+		if loadPreset() then
+			Rayfield:Notify({
+				Title = "Preset",
+				Content = "Preset loaded! Re-run to update UI toggles.",
+				Duration = 5
+			})
+		else
+			Rayfield:Notify({
+				Title = "Preset",
+				Content = "No preset found.",
+				Duration = 3
+			})
+		end
+	end
+})
+
+MiscTab:CreateButton({
+	Name = "🗑️ Delete My Preset",
+	Callback = function()
+		deletePreset()
+		Rayfield:Notify({
+			Title = "Preset",
+			Content = "Preset deleted.",
+			Duration = 3
+		})
+	end
+})
+
+MiscTab:CreateToggle({
+	Name = "Auto-load preset on start",
+	CurrentValue = isfile(FILE_NAME),
+	Callback = function(v)
+		if v then
+			if not isfile(FILE_NAME) then savePreset() end
+		else
+			deletePreset()
+		end
+	end
+})
+
+-- Finalize UI Loading
+Rayfield:LoadConfiguration()
